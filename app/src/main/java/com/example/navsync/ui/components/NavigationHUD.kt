@@ -249,12 +249,12 @@ private fun SystemStatus(
         
         Column {
             Text(
-                text = "NavSync",
+                text = "System",
                 color = Color(0xFF00BFFF),
                 fontSize = 12.sp
             )
             Text(
-                text = if (gnssAvailable) "Navigation Active" else "Navigation Active",
+                text = source,
                 color = Color(0xFF00BFFF),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium

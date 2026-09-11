@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,7 @@ import com.example.navsync.ui.theme.TextPrimary
 import com.example.navsync.ui.theme.TextSecondary
 import com.example.navsync.viewmodel.NavigationViewModel
 import com.example.navsync.viewmodel.SimulationViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SimulationScreen(
@@ -62,6 +64,7 @@ fun SimulationScreen(
     val isRunning = navigationViewModel.isSimulationRunning
     val currentStep = navigationViewModel.currentStep
     val totalSteps = navigationViewModel.totalSteps
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -78,7 +81,7 @@ fun SimulationScreen(
         // Dataset Selection
         DatasetSelection(
             selectedDataset = simulationConfig.dataset,
-            availableDatasets = simulationViewModel.getAvailableDatasets(),
+            availableDatasets = simulationViewModel.getAvailableDatasetsSync(),
             onDatasetSelected = simulationViewModel::selectDataset,
             enabled = !isRunning
         )
@@ -105,13 +108,20 @@ fun SimulationScreen(
         SimulationControls(
             isRunning = isRunning,
             onStart = {
-                val dataset = simulationViewModel.loadConfiguredDataset()
-                navigationViewModel.startSimulation(
-                    dataset = dataset,
-                    gnssOutageEnabled = !simulationConfig.gnssActive,
-                    outageStartStep = simulationConfig.outageStartTime,
-                    outageDurationSeconds = simulationConfig.outageDuration
-                )
+                coroutineScope.launch {
+                    try {
+                        val dataset = simulationViewModel.loadConfiguredDataset()
+                        navigationViewModel.startSimulation(
+                            dataset = dataset,
+                            gnssOutageEnabled = !simulationConfig.gnssActive,
+                            outageStartStep = simulationConfig.outageStartTime,
+                            outageDurationSeconds = simulationConfig.outageDuration
+                        )
+                    } catch (e: Exception) {
+                        // Handle dataset loading error
+                        // Could show error UI here
+                    }
+                }
             },
             onStop = navigationViewModel::stopSimulation,
             onReset = navigationViewModel::resetSimulation

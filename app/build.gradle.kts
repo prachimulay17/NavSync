@@ -58,4 +58,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2")
     implementation("androidx.navigation:navigation-compose:2.8.3")
+    
+    // MapLibre SDK for Android - Open source map rendering with 16 KB page size support
+    implementation("org.maplibre.gl:android-sdk:13.0.2")
 }

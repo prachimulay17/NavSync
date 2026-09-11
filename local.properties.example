@@ -1,0 +1,12 @@
+# local.properties.example
+# Copy this file to 'local.properties' and add your actual API keys
+# DO NOT commit 'local.properties' to git (it is in .gitignore)
+
+# Android SDK location (usually set automatically by Android Studio)
+# sdk.dir=C\:\\Users\\YourUsername\\AppData\\Local\\Android\\sdk
+
+# Google Maps API Key
+# Get your key from: https://console.cloud.google.com/
+# Enable "Maps SDK for Android" API
+# Restrict key to your app package: com.example.navsync
+MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY_HERE

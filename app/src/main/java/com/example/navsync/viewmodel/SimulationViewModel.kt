@@ -1,26 +1,55 @@
 package com.example.navsync.viewmodel
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.navsync.data.CsvDataSource
 import com.example.navsync.data.DatasetRepository
+import com.example.navsync.data.NavigationDataset
+import kotlinx.coroutines.launch
 
 data class SimulationConfig(
-    val dataset: String = "Delhi Urban Route",
+    val dataset: String = "V-Vw9",
     val gnssActive: Boolean = true,
     val outageDuration: Int = 30, // seconds
     val outageStartTime: Int = 20 // seconds into the simulation
 )
 
-class SimulationViewModel : ViewModel() {
+class SimulationViewModel(application: Application) : AndroidViewModel(application) {
     
-    private val datasetRepository = DatasetRepository()
+    private val datasetRepository = DatasetRepository(CsvDataSource(application))
     
     var simulationConfig by mutableStateOf(SimulationConfig())
         private set
     
-    fun getAvailableDatasets(): List<String> = datasetRepository.getAvailableDatasets()
+    var availableDatasets by mutableStateOf<List<String>>(emptyList())
+        private set
+    
+    var isLoadingDatasets by mutableStateOf(false)
+        private set
+    
+    init {
+        loadAvailableDatasets()
+    }
+    
+    private fun loadAvailableDatasets() {
+        viewModelScope.launch {
+            isLoadingDatasets = true
+            try {
+                availableDatasets = datasetRepository.getAvailableDatasets()
+            } catch (e: Exception) {
+                // Fallback to empty list
+                availableDatasets = emptyList()
+            } finally {
+                isLoadingDatasets = false
+            }
+        }
+    }
+    
+    fun getAvailableDatasetsSync(): List<String> = availableDatasets
     
     fun selectDataset(dataset: String) {
         simulationConfig = simulationConfig.copy(dataset = dataset)
@@ -40,6 +69,9 @@ class SimulationViewModel : ViewModel() {
     
     /**
      * Load the configured dataset.
+     * This is a suspend function to support async data sources.
      */
-    fun loadConfiguredDataset() = datasetRepository.loadDataset(simulationConfig.dataset)
+    suspend fun loadConfiguredDataset(): NavigationDataset {
+        return datasetRepository.loadNavigationDataset(simulationConfig.dataset)
+    }
 }

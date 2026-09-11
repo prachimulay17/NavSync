@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.navsync.ui.components.FloatingButtons
-import com.example.navsync.ui.components.MapArea
+import com.example.navsync.ui.components.MapLibreMapArea
 import com.example.navsync.ui.components.NavigationHUD
 import com.example.navsync.ui.components.StatusBar
 import com.example.navsync.viewmodel.NavigationViewModel
@@ -20,15 +20,17 @@ fun NavigationScreen(
     navigationViewModel: NavigationViewModel = viewModel()
 ) {
     val navigationState = navigationViewModel.navigationState
+    val trajectoryPoints = navigationViewModel.trajectoryPoints
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
     ) {
-        // Map area (full screen background)
-        MapArea(
+        // MapLibre map area (full screen background)
+        MapLibreMapArea(
             navigationState = navigationState,
+            trajectoryPoints = trajectoryPoints,
             modifier = Modifier.fillMaxSize()
         )
         

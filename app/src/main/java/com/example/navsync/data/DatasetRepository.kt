@@ -2,15 +2,23 @@ package com.example.navsync.data
 
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * Repository for navigation datasets.
- * Currently provides synthetic datasets for prototyping.
- * Future: Load real recorded datasets from files or remote sources.
+ * ═══════════════════════════════════════════════════════════════════
+ * SYNTHETIC DATA SOURCE
+ * ═══════════════════════════════════════════════════════════════════
+ * 
+ * Generates synthetic navigation datasets for prototyping and testing.
+ * This is the current default data source.
+ * 
+ * Future: Will be replaced with real recorded datasets from CSV files,
+ * database, or remote sources.
  */
-class DatasetRepository {
+class SyntheticDataSource : ReplayDataSource {
     
-    fun getAvailableDatasets(): List<String> = listOf(
+    private val availableRoutes = listOf(
         "Delhi Urban Route",
         "Mumbai Highway",
         "Bangalore Tech Corridor",
@@ -18,12 +26,27 @@ class DatasetRepository {
         "Pune Hills Route"
     )
     
-    fun loadDataset(name: String): NavigationDataset {
-        // Generate synthetic dataset for prototyping
-        // Future: Load from JSON, CSV, or database
-        return generateSyntheticDataset(name)
+    override suspend fun getAvailableDatasets(): List<String> {
+        return availableRoutes
     }
     
+    override suspend fun loadDataset(name: String): ReplayDataset = withContext(Dispatchers.Default) {
+        if (name !in availableRoutes) {
+            throw DataSourceException("Dataset not found: $name")
+        }
+        
+        val navigationDataset = generateSyntheticDataset(name)
+        return@withContext ReplayDataset.fromNavigationDataset(navigationDataset, "synthetic")
+    }
+    
+    override fun getSourceType(): String = "synthetic"
+    
+    override fun isAvailable(): Boolean = true
+    
+    /**
+     * Generate synthetic dataset for prototyping.
+     * Creates realistic-looking trajectories with IMU sensor data.
+     */
     private fun generateSyntheticDataset(name: String): NavigationDataset {
         val basePoints = when (name) {
             "Delhi Urban Route" -> Triple(28.6139, 77.2090, 42.0)
@@ -101,3 +124,95 @@ class DatasetRepository {
         )
     }
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ * DATA SOURCE REPOSITORY
+ * ═══════════════════════════════════════════════════════════════════
+ * 
+ * Central repository for managing replay data sources.
+ * Provides unified access to different data sources.
+ * 
+ * Current: Uses CsvDataSource for VW datasets by default
+ * Can also use SyntheticDataSource for testing
+ */
+class DatasetRepository(
+    private val dataSource: ReplayDataSource
+) {
+    
+    /**
+     * Get list of available datasets from current source.
+     */
+    suspend fun getAvailableDatasets(): List<String> {
+        return try {
+            dataSource.getAvailableDatasets()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
+    /**
+     * Load dataset by name from current source.
+     */
+    suspend fun loadDataset(name: String): ReplayDataset {
+        return dataSource.loadDataset(name)
+    }
+    
+    /**
+     * Load dataset and return in legacy NavigationDataset format.
+     * For backward compatibility with existing code.
+     */
+    suspend fun loadNavigationDataset(name: String): NavigationDataset {
+        val replayDataset = loadDataset(name)
+        return replayDataset.toNavigationDataset()
+    }
+    
+    /**
+     * Get current data source type.
+     */
+    fun getSourceType(): String {
+        return dataSource.getSourceType()
+    }
+    
+    /**
+     * Check if current data source is available.
+     */
+    fun isSourceAvailable(): Boolean {
+        return dataSource.isAvailable()
+    }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ * FUTURE DATA SOURCE EXAMPLES
+ * ═══════════════════════════════════════════════════════════════════
+ * 
+ * Templates for future data source implementations:
+ * 
+ * class CsvDataSource(private val csvDirectory: File) : ReplayDataSource {
+ *     override suspend fun getAvailableDatasets(): List<String> {
+ *         return csvDirectory.listFiles { file -> file.extension == "csv" }
+ *             ?.map { it.nameWithoutExtension }
+ *             ?: emptyList()
+ *     }
+ *     
+ *     override suspend fun loadDataset(name: String): ReplayDataset {
+ *         val file = File(csvDirectory, "$name.csv")
+ *         return parseCsvFile(file)
+ *     }
+ *     
+ *     override fun getSourceType(): String = "csv"
+ * }
+ * 
+ * class RecordedDataSource(private val context: Context) : ReplayDataSource {
+ *     override suspend fun getAvailableDatasets(): List<String> {
+ *         // Query database or file system for recorded sessions
+ *     }
+ *     
+ *     override suspend fun loadDataset(name: String): ReplayDataset {
+ *         // Load from internal storage or database
+ *     }
+ *     
+ *     override fun getSourceType(): String = "recorded"
+ * }
+ */

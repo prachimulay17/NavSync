@@ -31,10 +31,13 @@ class NavigationViewModel : ViewModel() {
     
     var totalSteps by mutableStateOf(0)
         private set
+    
+    var trajectoryPoints by mutableStateOf<List<Pair<Double, Double>>>(emptyList())
+        private set
 
     /**
      * Start automatic simulation playback.
-     * Updates navigation state every second until simulation completes.
+     * Uses actual dataset timing (approximately 10 Hz for VW datasets).
      */
     fun startSimulation(
         dataset: NavigationDataset,
@@ -52,16 +55,46 @@ class NavigationViewModel : ViewModel() {
         totalSteps = simulator.getTotalSteps()
         isSimulationRunning = true
         
-        // Start automatic playback
+        android.util.Log.d("NavigationViewModel", "Starting simulation: ${dataset.name}, $totalSteps steps")
+        
+        // Extract trajectory points for visualization
+        trajectoryPoints = dataset.points.map { point ->
+            Pair(point.gnssData.latitude, point.gnssData.longitude)
+        }
+        
+        // Start automatic playback with actual dataset timing
         simulationJob = viewModelScope.launch {
+            var lastTimestampMs = 0L
+            var updateCount = 0
+            
             while (isActive && !simulator.isComplete()) {
-                navigationState = simulator.nextState()
+                // Get current timestamp BEFORE advancing
+                val currentPoint = dataset.points.getOrNull(simulator.getCurrentStep())
+                val currentTimestampMs = currentPoint?.sensorData?.timestampMs ?: 0L
+                
+                // Calculate delay based on actual timestamp delta
+                if (lastTimestampMs > 0) {
+                    val delayMs = (currentTimestampMs - lastTimestampMs).coerceAtLeast(0L)
+                    if (delayMs > 0) {
+                        delay(delayMs)
+                    }
+                }
+                
+                // Advance simulation
+                val state = simulator.nextState()
+                navigationState = state
                 currentStep = simulator.getCurrentStep()
-                delay(1000L)  // 1 second per step
+                lastTimestampMs = currentTimestampMs
+                
+                updateCount++
+                if (updateCount % 50 == 0) {
+                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s")
+                }
             }
             
             // Simulation complete
             if (isActive) {
+                android.util.Log.d("NavigationViewModel", "Simulation complete: $updateCount updates")
                 isSimulationRunning = false
             }
         }

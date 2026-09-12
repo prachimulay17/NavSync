@@ -18,52 +18,65 @@ data class InferenceResult(
  * Interface for NavSync ML-based position estimation.
  * 
  * ═══════════════════════════════════════════════════════════════════
- * INTEGRATION POINT FOR ML MODEL
+ * ML TEAM INTEGRATION GUIDE
  * ═══════════════════════════════════════════════════════════════════
  * 
- * This interface defines the contract between the navigation system and
- * the ML inference engine. Implement this interface to integrate your
- * trained TensorFlow Lite model.
+ * Implement this interface to integrate your ML/ESKF model with the NavSync
+ * Android simulation. The simulator handles all data flow, UI updates, and
+ * evaluation - you only need to provide position estimation.
+ * 
+ * INTEGRATION STEPS:
+ * 1. Create class implementing NavSyncInference
+ * 2. Update InferenceFactory.createInference() to return your class
+ * 3. Test using existing V-Vw9/10/11 datasets with GNSS outage scenarios
  * 
  * ═══════════════════════════════════════════════════════════════════
  * INPUT DATA (Available to ML Model)
  * ═══════════════════════════════════════════════════════════════════
  * 
- * 1. SensorData (IMU readings):
- *    - accelerationX, accelerationY, accelerationZ (m/s²)
- *    - gyroX, gyroY, gyroZ (rad/s)
- *    - timestampMs (milliseconds)
+ * 1. SensorData (Smartphone IMU readings from S-files):
+ *    - Raw accelerometer: accelerationX/Y/Z (m/s²) - includes gravity + motion
+ *    - Gravity vector: gravityX/Y/Z (m/s²) - for gravity compensation
+ *    - Gyroscope rates: gyroYaw/Pitch/Roll (rad/s) - angular velocities
+ *    - Magnetometer: magneticX/Y/Z (μT) - magnetic field strength
+ *    - Device orientation: orientationYaw/Pitch/Roll (°) - for frame transformation
+ *    - Timestamp: timestampMs - for delta time calculation
  * 
- * 2. NavigationState (Previous estimate):
- *    - latitude, longitude (degrees)
- *    - speedKmh, headingDegrees
- *    - confidence (0.0 - 1.0)
+ * 2. NavigationState (Previous position estimate):
+ *    - Position: latitude, longitude (degrees)
+ *    - Motion: speedKmh, headingDegrees
+ *    - Quality: confidence (0.0 - 1.0)
+ *    - Source: GNSS vs AI_ESTIMATION vs DEAD_RECKONING
  * 
- * 3. deltaTimeMs (Time since last update)
+ * 3. Time Delta: deltaTimeMs (milliseconds since last update, ~100ms for 10Hz)
  * 
  * ═══════════════════════════════════════════════════════════════════
- * FORBIDDEN DATA (NOT Available During Outage)
+ * FORBIDDEN DATA (NOT Available During Outage - Would Be Cheating)
  * ═══════════════════════════════════════════════════════════════════
  * 
- * - GNSS position (cheating)
- * - Ground truth position (evaluation only)
+ * - V-file GNSS position (reference/ground truth)
+ * - V-file velocity or heading (reference data)
  * - Future sensor readings (time travel)
+ * - Any data not available to a real smartphone during GNSS denial
  * 
  * ═══════════════════════════════════════════════════════════════════
- * EXPECTED OUTPUT
+ * EXPECTED OUTPUT (InferenceResult)
  * ═══════════════════════════════════════════════════════════════════
  * 
- * InferenceResult containing:
- * - Estimated position (latitude, longitude)
- * - Estimated speed and heading
- * - Confidence score (0.0 = no confidence, 1.0 = perfect confidence)
+ * Return estimated navigation state:
+ * - Position: latitude, longitude (degrees) - your best position estimate
+ * - Motion: speedKmh (km/h), headingDegrees (0-360°) - velocity estimate  
+ * - Quality: confidence (0.0-1.0) - how confident you are in this estimate
  * 
- * ═══════════════════════════════════════════════════════════════════
- * IMPLEMENTATION GUIDE
- * ═══════════════════════════════════════════════════════════════════
+ * PERFORMANCE EXPECTATIONS:
+ * - Called at ~10 Hz (every 100ms) during GNSS outage
+ * - Should run in <10ms for real-time performance
+ * - Memory usage should be reasonable for mobile device
  * 
- * See MLModelInference class below for complete implementation example
- * with TensorFlow Lite integration.
+ * EVALUATION:
+ * - Your estimates compared against V-file ground truth
+ * - Metrics: position error, velocity error, heading error over time
+ * - Drift accumulation during different outage durations (10s, 30s, 60s+)
  */
 interface NavSyncInference {
     
@@ -128,13 +141,17 @@ interface NavSyncInference {
  * - Previous position/velocity from navigation state
  * - IMU sensor data for heading changes
  * - Basic constant-velocity motion model
+ * 
+ * For NavSync prototype: maintains last valid V dataset speed during outage
  */
 class DeadReckoningInference : NavSyncInference {
     
     private var uncertaintyFactor: Double = 1.0
+    private var baselineSpeed: Double = 0.0
     
     override fun initialize(lastState: NavigationState) {
         uncertaintyFactor = 1.0
+        baselineSpeed = lastState.speedKmh  // Preserve last valid V dataset speed
     }
     
     override fun estimatePosition(
@@ -147,11 +164,13 @@ class DeadReckoningInference : NavSyncInference {
         // Confidence degrades over time (no re-calibration possible)
         uncertaintyFactor *= 0.98
         
-        // Estimate distance traveled using previous speed (constant velocity assumption)
-        val distanceKm = previousState.speedKmh * (deltaTimeSec / 3600.0)
+        // Estimate distance traveled using baseline speed (from last valid V data)
+        // Do NOT decay speed artificially - use last valid recorded velocity
+        val currentSpeed = baselineSpeed
+        val distanceKm = currentSpeed * (deltaTimeSec / 3600.0)
         
-        // Update heading using gyroscope Z-axis (yaw rate)
-        val headingChange = sensorData.gyroZ * deltaTimeSec * 10.0
+        // Update heading using gyroscope yaw rate
+        val headingChange = sensorData.gyroYaw * deltaTimeSec * 10.0
         val newHeading = previousState.headingDegrees + headingChange
         
         // Update position using previous heading
@@ -162,15 +181,12 @@ class DeadReckoningInference : NavSyncInference {
         val newLatitude = previousState.latitude + latChange
         val newLongitude = previousState.longitude + lonChange
         
-        // Speed gradually decreases (no accelerometer integration for speed)
-        val newSpeed = previousState.speedKmh * 0.99
-        
         val confidence = (0.75 * uncertaintyFactor).coerceIn(0.3, 0.85)
         
         return InferenceResult(
             latitude = newLatitude,
             longitude = newLongitude,
-            speedKmh = newSpeed,
+            speedKmh = currentSpeed,
             headingDegrees = newHeading,
             confidence = confidence
         )
@@ -178,6 +194,7 @@ class DeadReckoningInference : NavSyncInference {
     
     override fun reset() {
         uncertaintyFactor = 1.0
+        baselineSpeed = 0.0
     }
 }
 
@@ -420,42 +437,75 @@ class MLModelInference(private val context: Context) : NavSyncInference {
 
 /**
  * ═══════════════════════════════════════════════════════════════════
- * INFERENCE FACTORY
+ * INFERENCE FACTORY - ML TEAM INTEGRATION POINT
  * ═══════════════════════════════════════════════════════════════════
  * 
  * Central factory for creating inference engines.
  * 
- * CURRENT: Returns dead-reckoning baseline
- * FUTURE: Check for ML model availability and return MLModelInference
+ * FOR ML TEAM INTEGRATION:
+ * 1. Implement NavSyncInference interface in your ML class
+ * 2. Update createInference() to return your implementation
+ * 3. All sensor data available via SensorData parameter
+ * 4. Return InferenceResult with estimated position/speed/heading/confidence
+ * 5. No other changes needed - NavigationSimulator handles the rest
+ * 
+ * CURRENT: Returns Raw IMU Dead Reckoning baseline
+ * REPLACE WITH: Your ML/ESKF implementation
  */
 object InferenceFactory {
     
     /**
      * Create inference engine.
      * 
-     * TO INTEGRATE YOUR ML MODEL:
-     * 1. Uncomment MLModelInference class above
-     * 2. Add TensorFlow Lite dependency
-     * 3. Place model file in assets/
-     * 4. Uncomment the code below and pass context
+     * ML TEAM: Replace this method to return your implementation:
      * 
-     * Example:
-     * ```
-     * fun createInference(context: Context): NavSyncInference {
-     *     return try {
-     *         MLModelInference(context)
-     *     } catch (e: Exception) {
-     *         println("ML model failed to load, using dead-reckoning fallback")
-     *         DeadReckoningInference()
-     *     }
+     * ```kotlin
+     * fun createInference(context: Context? = null): NavSyncInference {
+     *     return YourMLInference(context)
      * }
      * ```
+     * 
+     * Available implementations:
+     * - RawImuDeadReckoning: Raw smartphone IMU integration baseline
+     * - DeadReckoningInference: Simple constant-velocity fallback
+     * - YourMLInference: Your ML/ESKF implementation (replace here)
      */
     fun createInference(): NavSyncInference {
-        // Current: Return baseline dead-reckoning
-        return DeadReckoningInference()
+        // CURRENT: Raw IMU Dead Reckoning baseline
+        return RawImuDeadReckoning()
         
-        // Future: Return ML model (when ready)
-        // return MLModelInference(context)
+        // ML TEAM: Replace with your implementation
+        // return YourMLInference()
+        
+        // FALLBACK: Simple dead-reckoning
+        // return DeadReckoningInference()
+    }
+    
+    /**
+     * Get list of available inference implementations.
+     * Useful for testing and debugging.
+     */
+    fun getAvailableInferences(): List<String> {
+        return listOf(
+            "RawImuDeadReckoning",
+            "DeadReckoningInference",
+            // "YourMLInference" // Add your implementation here
+        )
+    }
+    
+    /**
+     * Create inference by name (for testing different approaches).
+     * ML TEAM: Add your implementation to the when statement.
+     */
+    fun createInferenceByName(name: String): NavSyncInference {
+        return when (name) {
+            "RawImuDeadReckoning" -> RawImuDeadReckoning()
+            "DeadReckoningInference" -> DeadReckoningInference()
+            // "YourMLInference" -> YourMLInference() // Add your implementation here
+            else -> {
+                android.util.Log.w("InferenceFactory", "Unknown inference: $name, using default")
+                createInference()
+            }
+        }
     }
 }

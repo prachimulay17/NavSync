@@ -85,9 +85,18 @@ class SyntheticDataSource : ReplayDataSource {
                 accelerationX = Math.random() * 0.5 - 0.25,
                 accelerationY = Math.random() * 0.5 - 0.25,
                 accelerationZ = 9.8 + Math.random() * 0.2 - 0.1,
-                gyroX = Math.random() * 0.02 - 0.01,
-                gyroY = Math.random() * 0.02 - 0.01,
-                gyroZ = (headingVariation - currentHeading) * 0.1
+                gravityX = 0.0,
+                gravityY = 0.0,
+                gravityZ = 9.8,
+                gyroYaw = (headingVariation - currentHeading) * 0.1,
+                gyroPitch = Math.random() * 0.02 - 0.01,
+                gyroRoll = Math.random() * 0.02 - 0.01,
+                magneticX = Math.random() * 50.0 - 25.0,
+                magneticY = Math.random() * 50.0 - 25.0,
+                magneticZ = Math.random() * 50.0 - 25.0,
+                orientationYaw = currentHeading,
+                orientationPitch = Math.random() * 5.0 - 2.5,
+                orientationRoll = Math.random() * 5.0 - 2.5
             )
             
             // GNSS data - available only when signal present

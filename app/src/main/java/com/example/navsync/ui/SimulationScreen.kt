@@ -114,8 +114,8 @@ fun SimulationScreen(
                         navigationViewModel.startSimulation(
                             dataset = dataset,
                             gnssOutageEnabled = !simulationConfig.gnssActive,
-                            outageStartStep = simulationConfig.outageStartTime,
-                            outageDurationSeconds = simulationConfig.outageDuration
+                            outageStartTimeSeconds = simulationConfig.outageStartTime.toDouble(),
+                            outageDurationSeconds = simulationConfig.outageDuration.toDouble()
                         )
                     } catch (e: Exception) {
                         // Handle dataset loading error

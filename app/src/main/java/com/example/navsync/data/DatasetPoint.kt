@@ -2,20 +2,30 @@ package com.example.navsync.data
 
 /**
  * Sensor data available to the inference engine.
- * This contains ONLY the sensors that would be available during a real GNSS outage:
- * - IMU (accelerometer, gyroscope)
- * - Previous velocity/heading estimates
- * 
- * DOES NOT contain GNSS position - that would be cheating during outage.
+ * Contains smartphone IMU sensors available during GNSS outage.
  */
 data class SensorData(
     val timestampMs: Long,
+    // Raw accelerometer (m/s²) - includes gravity + motion
     val accelerationX: Double,
     val accelerationY: Double,
     val accelerationZ: Double,
-    val gyroX: Double,
-    val gyroY: Double,
-    val gyroZ: Double
+    // Gravity vector (m/s²) - for gravity compensation
+    val gravityX: Double,
+    val gravityY: Double,
+    val gravityZ: Double,
+    // Gyroscope (rad/s)
+    val gyroYaw: Double,    // Yaw rate (Z-axis rotation)
+    val gyroPitch: Double,  // Pitch rate (Y-axis rotation) 
+    val gyroRoll: Double,   // Roll rate (X-axis rotation)
+    // Magnetometer (μT)
+    val magneticX: Double,
+    val magneticY: Double,
+    val magneticZ: Double,
+    // Device orientation (degrees) - for frame transformation
+    val orientationYaw: Double,   // Azimuth/heading
+    val orientationPitch: Double, // Pitch
+    val orientationRoll: Double   // Roll
 )
 
 /**

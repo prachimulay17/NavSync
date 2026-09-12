@@ -21,6 +21,8 @@ fun NavigationScreen(
 ) {
     val navigationState = navigationViewModel.navigationState
     val trajectoryPoints = navigationViewModel.trajectoryPoints
+    val estimatedTrajectoryPoints = navigationViewModel.estimatedTrajectoryPoints
+    val hasArrived = navigationViewModel.hasArrived
 
     Box(
         modifier = Modifier
@@ -31,12 +33,14 @@ fun NavigationScreen(
         MapLibreMapArea(
             navigationState = navigationState,
             trajectoryPoints = trajectoryPoints,
+            estimatedTrajectoryPoints = estimatedTrajectoryPoints,
             modifier = Modifier.fillMaxSize()
         )
         
         // Status bar overlay (top)
         StatusBar(
             navigationState = navigationState,
+            hasArrived = hasArrived,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(horizontal = 20.dp, vertical = 16.dp)

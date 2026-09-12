@@ -26,6 +26,7 @@ import com.example.navsync.ui.theme.StatusGreen
 @Composable
 fun StatusBar(
     navigationState: NavigationState,
+    hasArrived: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -39,17 +40,43 @@ fun StatusBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // GNSS Status - left side
-        GnssStatusIndicator(
-            gnssAvailable = navigationState.gnssAvailable,
-            confidence = navigationState.confidence
-        )
+        // GNSS Status or Arrived indicator - left side
+        if (hasArrived) {
+            ArrivedIndicator()
+        } else {
+            GnssStatusIndicator(
+                gnssAvailable = navigationState.gnssAvailable,
+                confidence = navigationState.confidence
+            )
+        }
         
         // Speed display - center (dominant)
         SpeedDisplay(speed = navigationState.speedKmh)
         
         // Compass heading - right side
         CompassHeading(heading = navigationState.headingDegrees)
+    }
+}
+
+@Composable
+private fun ArrivedIndicator() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF4CAF50))
+        )
+        
+        Text(
+            text = "ARRIVED",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

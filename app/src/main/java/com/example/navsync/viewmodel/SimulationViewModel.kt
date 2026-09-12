@@ -14,8 +14,8 @@ import kotlinx.coroutines.launch
 data class SimulationConfig(
     val dataset: String = "V-Vw9",
     val gnssActive: Boolean = true,
-    val outageDuration: Int = 30, // seconds
-    val outageStartTime: Int = 20 // seconds into the simulation
+    val outageDuration: Int = 60, // seconds - long enough to test drift through end of Vw9
+    val outageStartTime: Int = 35 // seconds into the simulation - Vw9 outage timing
 )
 
 class SimulationViewModel(application: Application) : AndroidViewModel(application) {

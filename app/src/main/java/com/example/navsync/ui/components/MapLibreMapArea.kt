@@ -2,13 +2,29 @@ package com.example.navsync.ui.components
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -40,9 +56,11 @@ import kotlin.math.sin
  * Provides:
  * - Live camera tracking bound to NavigationState
  * - Dark navigation-style map theme
- * - Vehicle marker with heading indicator
+ * - Vehicle marker with heading indicator (follows estimated position)
  * - Confidence visualization
- * - Route/trajectory overlay from actual dataset
+ * - Blue reference trajectory from V dataset
+ * - Orange estimated trajectory from NavSync inference
+ * - Map legend showing trajectory types
  * 
  * Uses OpenStreetMap tiles via MapLibre GL Native (open source, no API key required)
  */
@@ -50,6 +68,7 @@ import kotlin.math.sin
 fun MapLibreMapArea(
     navigationState: NavigationState,
     trajectoryPoints: List<Pair<Double, Double>> = emptyList(),
+    estimatedTrajectoryPoints: List<Pair<Double, Double>> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -69,91 +88,110 @@ fun MapLibreMapArea(
     
     // Only create MapView after MapLibre is initialized
     if (mapLibreInitialized) {
-        // Create map view
-        AndroidView(
-            modifier = modifier.fillMaxSize(),
-            factory = { ctx ->
-                MapView(ctx).also { mv ->
-                    mapView = mv
-                    
-                mv.getMapAsync { map ->
-                    mapLibreMap = map
-                    
-                    // Load OpenFreeMap Liberty style
-                    val styleUrl = "https://tiles.openfreemap.org/styles/liberty"
-                    android.util.Log.d("MapLibreMapArea", "Loading style from: $styleUrl")
-                    
-                    map.setStyle(styleUrl, object : Style.OnStyleLoaded {
-                        override fun onStyleLoaded(style: Style) {
-                            android.util.Log.d("MapLibreMapArea", "Style loaded successfully!")
-                            
-                            // Apply dark theme to base style layers
-                            applyDarkNavigationTheme(style)
-                            
-                            // Add sources for overlays
-                            style.addSource(GeoJsonSource("route-source"))
-                            style.addSource(GeoJsonSource("confidence-source"))
-                            style.addSource(GeoJsonSource("vehicle-source"))
-                            
-                            // Add layers
-                            style.addLayer(LineLayer("route-layer", "route-source").withProperties(
-                                lineColor("#00BFFF"),
-                                lineWidth(6f),
-                                lineOpacity(1f)
-                            ))
-                            
-                            style.addLayer(CircleLayer("confidence-layer", "confidence-source").withProperties(
-                                circleRadius(20f),
-                                circleColor("#00E676"),
-                                circleOpacity(0.3f),
-                                circleStrokeColor("#00E676"),
-                                circleStrokeWidth(2f),
-                                circleStrokeOpacity(0.8f)
-                            ))
-                            
-                            // Add vehicle marker icon
-                            addVehicleMarkerIcon(style)
-                            
-                            style.addLayer(SymbolLayer("vehicle-layer", "vehicle-source").withProperties(
-                                iconImage("vehicle-marker-cyan"),
-                                iconRotate(0f),
-                                iconRotationAlignment("map"),
-                                iconAllowOverlap(true),
-                                iconIgnorePlacement(true),
-                                iconSize(1f)
-                            ))
+        Box(modifier = modifier.fillMaxSize()) {
+            // Create map view
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    MapView(ctx).also { mv ->
+                        mapView = mv
                         
-                            // Initial camera position
-                            updateCamera(map, navigationState, animate = false)
+                    mv.getMapAsync { map ->
+                        mapLibreMap = map
+                        
+                        // Load OpenFreeMap Liberty style
+                        val styleUrl = "https://tiles.openfreemap.org/styles/liberty"
+                        android.util.Log.d("MapLibreMapArea", "Loading style from: $styleUrl")
+                        
+                        map.setStyle(styleUrl, object : Style.OnStyleLoaded {
+                            override fun onStyleLoaded(style: Style) {
+                                android.util.Log.d("MapLibreMapArea", "Style loaded successfully!")
+                                
+                                // Apply dark theme to base style layers
+                                applyDarkNavigationTheme(style)
+                                
+                                // Add sources for overlays
+                                style.addSource(GeoJsonSource("reference-route-source"))
+                                style.addSource(GeoJsonSource("estimated-route-source"))
+                                style.addSource(GeoJsonSource("confidence-source"))
+                                style.addSource(GeoJsonSource("vehicle-source"))
+                                
+                                // Add layers
+                                // Reference trajectory (blue line - V dataset)
+                                style.addLayer(LineLayer("reference-route-layer", "reference-route-source").withProperties(
+                                    lineColor("#2196F3"), // Blue
+                                    lineWidth(4f),
+                                    lineOpacity(0.8f)
+                                ))
+                                
+                                // Estimated trajectory (orange line - NavSync inference)
+                                style.addLayer(LineLayer("estimated-route-layer", "estimated-route-source").withProperties(
+                                    lineColor("#FF9800"), // Orange
+                                    lineWidth(4f),
+                                    lineOpacity(0.9f)
+                                ))
+                                
+                                style.addLayer(CircleLayer("confidence-layer", "confidence-source").withProperties(
+                                    circleRadius(20f),
+                                    circleColor("#00E676"),
+                                    circleOpacity(0.3f),
+                                    circleStrokeColor("#00E676"),
+                                    circleStrokeWidth(2f),
+                                    circleStrokeOpacity(0.8f)
+                                ))
+                                
+                                // Add vehicle marker icon
+                                addVehicleMarkerIcon(style)
+                                
+                                style.addLayer(SymbolLayer("vehicle-layer", "vehicle-source").withProperties(
+                                    iconImage("vehicle-marker-cyan"),
+                                    iconRotate(0f),
+                                    iconRotationAlignment("map"),
+                                    iconAllowOverlap(true),
+                                    iconIgnorePlacement(true),
+                                    iconSize(1f)
+                                ))
                             
-                            // Initial overlays
-                            updateOverlays(map, navigationState, trajectoryPoints, style)
+                                // Initial camera position
+                                updateCamera(map, navigationState, animate = false)
+                                
+                                // Initial overlays
+                                updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, style)
+                            }
+                        })
+                        
+                        // Configure map settings
+                        map.uiSettings.apply {
+                            isCompassEnabled = false
+                            isLogoEnabled = false
+                            isAttributionEnabled = true
+                            isRotateGesturesEnabled = true
+                            isScrollGesturesEnabled = true
+                            isTiltGesturesEnabled = true
+                            isZoomGesturesEnabled = true
                         }
-                    })
-                    
-                    // Configure map settings
-                    map.uiSettings.apply {
-                        isCompassEnabled = false
-                        isLogoEnabled = false
-                        isAttributionEnabled = true
-                        isRotateGesturesEnabled = true
-                        isScrollGesturesEnabled = true
-                        isTiltGesturesEnabled = true
-                        isZoomGesturesEnabled = true
+                    }
+                }
+            },
+            update = { mv ->
+                // Update camera and overlays when NavigationState changes
+                mapLibreMap?.let { map ->
+                    map.style?.let { style ->
+                        updateCamera(map, navigationState, animate = true)
+                        updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, style)
                     }
                 }
             }
-        },
-        update = { mv ->
-            // Update camera and overlays when NavigationState changes
-            mapLibreMap?.let { map ->
-                map.style?.let { style ->
-                    updateCamera(map, navigationState, animate = true)
-                    updateOverlays(map, navigationState, trajectoryPoints, style)
-                }
-            }
+        )
+        
+            // Map Legend Overlay
+            MapLegend(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                showEstimated = estimatedTrajectoryPoints.isNotEmpty()
+            )
         }
-    )
     
         // Handle lifecycle events
         DisposableEffect(lifecycleOwner) {
@@ -199,28 +237,48 @@ private fun updateCamera(
 }
 
 /**
- * Update all map overlays (vehicle marker, confidence circle, route)
+ * Update all map overlays (vehicle marker, confidence circle, trajectories)
  */
 private fun updateOverlays(
     map: MapLibreMap,
     navigationState: NavigationState,
-    trajectoryPoints: List<Pair<Double, Double>>,
+    referenceTrajectoryPoints: List<Pair<Double, Double>>,
+    estimatedTrajectoryPoints: List<Pair<Double, Double>>,
     style: Style
 ) {
     val vehiclePosition = Point.fromLngLat(navigationState.longitude, navigationState.latitude)
     
-    // Update route from actual trajectory or generate synthetic route
-    val routePoints = if (trajectoryPoints.isNotEmpty()) {
-        trajectoryPoints
+    // Update reference trajectory (blue line - complete V dataset)
+    if (referenceTrajectoryPoints.isNotEmpty()) {
+        val referenceGeoJson = FeatureCollection.fromFeatures(listOf(
+            Feature.fromGeometry(LineString.fromLngLats(referenceTrajectoryPoints.map { 
+                Point.fromLngLat(it.second, it.first) 
+            }))
+        ))
+        (style.getSource("reference-route-source") as? GeoJsonSource)?.setGeoJson(referenceGeoJson)
     } else {
-        generateRoutePoints(navigationState.latitude, navigationState.longitude, navigationState.headingDegrees)
+        // Show synthetic route if no reference data
+        val syntheticRoute = generateRoutePoints(navigationState.latitude, navigationState.longitude, navigationState.headingDegrees)
+        val syntheticGeoJson = FeatureCollection.fromFeatures(listOf(
+            Feature.fromGeometry(LineString.fromLngLats(syntheticRoute.map { 
+                Point.fromLngLat(it.second, it.first) 
+            }))
+        ))
+        (style.getSource("reference-route-source") as? GeoJsonSource)?.setGeoJson(syntheticGeoJson)
     }
-    val routeGeoJson = FeatureCollection.fromFeatures(listOf(
-        Feature.fromGeometry(LineString.fromLngLats(routePoints.map { 
-            Point.fromLngLat(it.second, it.first) 
-        }))
-    ))
-    (style.getSource("route-source") as? GeoJsonSource)?.setGeoJson(routeGeoJson)
+    
+    // Update estimated trajectory (orange line - NavSync inference)
+    if (estimatedTrajectoryPoints.isNotEmpty()) {
+        val estimatedGeoJson = FeatureCollection.fromFeatures(listOf(
+            Feature.fromGeometry(LineString.fromLngLats(estimatedTrajectoryPoints.map { 
+                Point.fromLngLat(it.second, it.first) 
+            }))
+        ))
+        (style.getSource("estimated-route-source") as? GeoJsonSource)?.setGeoJson(estimatedGeoJson)
+    } else {
+        // Clear estimated trajectory if no data
+        (style.getSource("estimated-route-source") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+    }
     
     // Update confidence circle
     val confidenceRadius = 20.0 * (1.0 - navigationState.confidence.coerceIn(0.0, 1.0))
@@ -241,7 +299,7 @@ private fun updateOverlays(
         (style.getSource("confidence-source") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
     }
     
-    // Update vehicle marker
+    // Update vehicle marker (always follows estimated/NavigationState position)
     val iconName = if (navigationState.gnssAvailable) "vehicle-marker-cyan" else "vehicle-marker-orange"
     val vehicleGeoJson = FeatureCollection.fromFeatures(listOf(
         Feature.fromGeometry(vehiclePosition)
@@ -292,10 +350,10 @@ private fun generateRoutePoints(lat: Double, lng: Double, headingDegrees: Double
  * Add vehicle marker icons to map style
  */
 private fun addVehicleMarkerIcon(style: Style) {
-    val cyanMarkerBitmap = createVehicleMarkerBitmap(Color.parseColor("#00BFFF"))
+    val cyanMarkerBitmap = createVehicleMarkerBitmap(android.graphics.Color.parseColor("#00BFFF"))
     style.addImage("vehicle-marker-cyan", cyanMarkerBitmap)
     
-    val orangeMarkerBitmap = createVehicleMarkerBitmap(Color.parseColor("#FF9800"))
+    val orangeMarkerBitmap = createVehicleMarkerBitmap(android.graphics.Color.parseColor("#FF9800"))
     style.addImage("vehicle-marker-orange", orangeMarkerBitmap)
 }
 
@@ -310,7 +368,7 @@ private fun createVehicleMarkerBitmap(color: Int): Bitmap {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     
     // Outer circle (white background)
-    paint.color = Color.WHITE
+    paint.color = android.graphics.Color.WHITE
     paint.style = Paint.Style.FILL
     canvas.drawCircle(size / 2f, size / 2f, 28f, paint)
     
@@ -319,7 +377,7 @@ private fun createVehicleMarkerBitmap(color: Int): Bitmap {
     canvas.drawCircle(size / 2f, size / 2f, 24f, paint)
     
     // Directional arrow pointing up
-    paint.color = Color.WHITE
+    paint.color = android.graphics.Color.WHITE
     paint.style = Paint.Style.FILL
     
     val arrowPath = Path()
@@ -391,5 +449,70 @@ private fun applyDarkNavigationTheme(style: Style) {
         }
     } catch (e: Exception) {
         android.util.Log.e("MapLibreMapArea", "Error applying dark theme: ${e.message}")
+    }
+}
+
+/**
+ * Unobtrusive map legend showing trajectory types.
+ */
+@Composable
+private fun MapLegend(
+    modifier: Modifier = Modifier,
+    showEstimated: Boolean = false
+) {
+    Column(
+        modifier = modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp)
+    ) {
+        // Reference trajectory legend item
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Blue line indicator
+            Spacer(
+                modifier = Modifier
+                    .size(width = 16.dp, height = 3.dp)
+                    .background(
+                        color = Color(0xFF2196F3),
+                        shape = RoundedCornerShape(1.5.dp)
+                    )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Reference",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        
+        // Estimated trajectory legend item (only show if estimated trajectory exists)
+        if (showEstimated) {
+            Spacer(modifier = Modifier.padding(vertical = 2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Orange line indicator  
+                Spacer(
+                    modifier = Modifier
+                        .size(width = 16.dp, height = 3.dp)
+                        .background(
+                            color = Color(0xFFFF9800),
+                            shape = RoundedCornerShape(1.5.dp)
+                        )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "NavSync",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
     }
 }

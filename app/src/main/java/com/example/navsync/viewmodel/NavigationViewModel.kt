@@ -34,6 +34,12 @@ class NavigationViewModel : ViewModel() {
     
     var trajectoryPoints by mutableStateOf<List<Pair<Double, Double>>>(emptyList())
         private set
+    
+    var estimatedTrajectoryPoints by mutableStateOf<List<Pair<Double, Double>>>(emptyList())
+        private set
+    
+    var hasArrived by mutableStateOf(false)
+        private set
 
     /**
      * Start automatic simulation playback.
@@ -42,18 +48,19 @@ class NavigationViewModel : ViewModel() {
     fun startSimulation(
         dataset: NavigationDataset,
         gnssOutageEnabled: Boolean,
-        outageStartStep: Int,
-        outageDurationSeconds: Int
+        outageStartTimeSeconds: Double,
+        outageDurationSeconds: Double
     ) {
         // Stop any existing simulation
         stopSimulation()
         
         // Configure simulator
         simulator.loadDataset(dataset)
-        simulator.configureOutage(gnssOutageEnabled, outageStartStep, outageDurationSeconds)
+        simulator.configureOutage(gnssOutageEnabled, outageStartTimeSeconds, outageDurationSeconds)
         
         totalSteps = simulator.getTotalSteps()
         isSimulationRunning = true
+        hasArrived = false
         
         android.util.Log.d("NavigationViewModel", "Starting simulation: ${dataset.name}, $totalSteps steps")
         
@@ -62,39 +69,59 @@ class NavigationViewModel : ViewModel() {
             Pair(point.gnssData.latitude, point.gnssData.longitude)
         }
         
+        // Reset estimated trajectory points
+        estimatedTrajectoryPoints = emptyList()
+        
         // Start automatic playback with actual dataset timing
         simulationJob = viewModelScope.launch {
             var lastTimestampMs = 0L
             var updateCount = 0
+            var estimatedPoints = mutableListOf<Pair<Double, Double>>()
+            var isTrackingEstimated = false
             
             while (isActive && !simulator.isComplete()) {
-                // Get current timestamp BEFORE advancing
-                val currentPoint = dataset.points.getOrNull(simulator.getCurrentStep())
-                val currentTimestampMs = currentPoint?.sensorData?.timestampMs ?: 0L
+                // Advance simulation first
+                val state = simulator.nextState()
+                navigationState = state
+                currentStep = simulator.getCurrentStep()
+                updateCount++
                 
-                // Calculate delay based on actual timestamp delta
-                if (lastTimestampMs > 0) {
+                // Track estimated trajectory during outage
+                if (!state.gnssAvailable && !isTrackingEstimated) {
+                    // Start tracking estimated trajectory from outage transition point
+                    isTrackingEstimated = true
+                    android.util.Log.d("NavigationViewModel", "Started tracking estimated trajectory at outage")
+                }
+                
+                if (isTrackingEstimated) {
+                    // Add current estimated position to orange trajectory
+                    estimatedPoints.add(Pair(state.latitude, state.longitude))
+                    estimatedTrajectoryPoints = estimatedPoints.toList()
+                }
+                
+                // Get timing from the reference point that was just processed
+                val referencePoint = simulator.getCurrentReferencePoint()
+                val currentTimestampMs = referencePoint?.sensorData?.timestampMs ?: 0L
+                
+                // Calculate delay for NEXT iteration based on timestamp progression
+                if (lastTimestampMs > 0 && currentTimestampMs > lastTimestampMs) {
                     val delayMs = (currentTimestampMs - lastTimestampMs).coerceAtLeast(0L)
                     if (delayMs > 0) {
                         delay(delayMs)
                     }
                 }
-                
-                // Advance simulation
-                val state = simulator.nextState()
-                navigationState = state
-                currentStep = simulator.getCurrentStep()
                 lastTimestampMs = currentTimestampMs
                 
-                updateCount++
                 if (updateCount % 50 == 0) {
-                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s")
+                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s, speed: ${navigationState.speedKmh}")
                 }
             }
             
             // Simulation complete
             if (isActive) {
-                android.util.Log.d("NavigationViewModel", "Simulation complete: $updateCount updates")
+                hasArrived = true
+                android.util.Log.d("NavigationViewModel", "Simulation complete: $updateCount updates, final step=$currentStep/$totalSteps")
+                android.util.Log.d("NavigationViewModel", "Final state: lat=${navigationState.latitude}, lon=${navigationState.longitude}, speed=${navigationState.speedKmh}, gnss=${navigationState.gnssAvailable}")
                 isSimulationRunning = false
             }
         }
@@ -117,6 +144,8 @@ class NavigationViewModel : ViewModel() {
         simulator.reset()
         navigationState = getDefaultState()
         currentStep = 0
+        hasArrived = false
+        estimatedTrajectoryPoints = emptyList()
     }
     
     private fun getDefaultState(): NavigationState {

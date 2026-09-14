@@ -466,11 +466,15 @@ object InferenceFactory {
      * ```
      * 
      * Available implementations:
+     * - ESKFNavSyncInference: Error-State Kalman Filter implementation
      * - RawImuDeadReckoning: Raw smartphone IMU integration baseline
      * - DeadReckoningInference: Simple constant-velocity fallback
      * - YourMLInference: Your ML/ESKF implementation (replace here)
      */
     fun createInference(): NavSyncInference {
+        // NEW: ESKF Implementation (replace RawImuDeadReckoning for better estimation)
+        // return ESKFNavSyncInference()
+        
         // CURRENT: Raw IMU Dead Reckoning baseline
         return RawImuDeadReckoning()
         
@@ -482,26 +486,66 @@ object InferenceFactory {
     }
     
     /**
+     * Create inference with Context (for ML models requiring assets).
+     * 
+     * @param context Android Context for loading ML model assets
+     * @return NavSyncInference implementation
+     */
+    fun createInferenceWithContext(context: android.content.Context): NavSyncInference {
+        return try {
+            // RoNIN + ESKF hybrid implementation
+            com.example.navsync.ml.RoninESKFInference(context)
+        } catch (e: Exception) {
+            android.util.Log.e("InferenceFactory", "Failed to create RoninESKF: ${e.message}, using fallback")
+            // Fallback to ESKF-only if RoNIN model fails to load
+            com.example.navsync.eskf.ESKFNavSyncInference()
+        }
+    }
+    
+    /**
+     * Create baseline IMU-only ESKF inference for comparison.
+     */
+    fun createBaselineESKFInference(): NavSyncInference {
+        return com.example.navsync.eskf.ESKFNavSyncInference()
+    }
+    
+    /**
+     * Create RoNIN+ESKF inference (requires Context).
+     */
+    fun createRoninESKFInference(context: android.content.Context): NavSyncInference {
+        return com.example.navsync.ml.RoninESKFInference(context)
+    }
+    
+    /**
      * Get list of available inference implementations.
      * Useful for testing and debugging.
      */
     fun getAvailableInferences(): List<String> {
         return listOf(
+            "RoninESKFInference",
+            "ESKFNavSyncInference",
             "RawImuDeadReckoning",
-            "DeadReckoningInference",
-            // "YourMLInference" // Add your implementation here
+            "DeadReckoningInference"
         )
     }
     
     /**
      * Create inference by name (for testing different approaches).
-     * ML TEAM: Add your implementation to the when statement.
+     * Note: Context-dependent implementations will fallback to no-context version.
      */
-    fun createInferenceByName(name: String): NavSyncInference {
+    fun createInferenceByName(name: String, context: android.content.Context? = null): NavSyncInference {
         return when (name) {
+            "RoninESKFInference" -> {
+                if (context != null) {
+                    com.example.navsync.ml.RoninESKFInference(context)
+                } else {
+                    android.util.Log.w("InferenceFactory", "RoninESKF requires Context, using ESKF-only")
+                    com.example.navsync.eskf.ESKFNavSyncInference()
+                }
+            }
+            "ESKFNavSyncInference" -> com.example.navsync.eskf.ESKFNavSyncInference()
             "RawImuDeadReckoning" -> RawImuDeadReckoning()
             "DeadReckoningInference" -> DeadReckoningInference()
-            // "YourMLInference" -> YourMLInference() // Add your implementation here
             else -> {
                 android.util.Log.w("InferenceFactory", "Unknown inference: $name, using default")
                 createInference()

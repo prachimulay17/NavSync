@@ -61,4 +61,7 @@ dependencies {
     
     // MapLibre SDK for Android - Open source map rendering with 16 KB page size support
     implementation("org.maplibre.gl:android-sdk:13.0.2")
+    
+    // ONNX Runtime for ML inference (RoNIN model)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 }

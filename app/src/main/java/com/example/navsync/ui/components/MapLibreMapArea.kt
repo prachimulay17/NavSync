@@ -69,6 +69,7 @@ fun MapLibreMapArea(
     navigationState: NavigationState,
     trajectoryPoints: List<Pair<Double, Double>> = emptyList(),
     estimatedTrajectoryPoints: List<Pair<Double, Double>> = emptyList(),
+    rawNavigationState: NavigationState? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -115,6 +116,7 @@ fun MapLibreMapArea(
                                 style.addSource(GeoJsonSource("estimated-route-source"))
                                 style.addSource(GeoJsonSource("confidence-source"))
                                 style.addSource(GeoJsonSource("vehicle-source"))
+                                style.addSource(GeoJsonSource("raw-vehicle-source")) // Raw ESKF position for debugging
                                 
                                 // Add layers
                                 // Reference trajectory (blue line - V dataset)
@@ -151,12 +153,21 @@ fun MapLibreMapArea(
                                     iconIgnorePlacement(true),
                                     iconSize(1f)
                                 ))
+                                
+                                // Raw vehicle position (small red circle for debugging)
+                                style.addLayer(CircleLayer("raw-vehicle-layer", "raw-vehicle-source").withProperties(
+                                    circleRadius(4f),
+                                    circleColor("#FF5722"), // Red for raw ESKF position
+                                    circleOpacity(0.8f),
+                                    circleStrokeColor("#FFFFFF"),
+                                    circleStrokeWidth(1f)
+                                ))
                             
                                 // Initial camera position
                                 updateCamera(map, navigationState, animate = false)
                                 
                                 // Initial overlays
-                                updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, style)
+                                updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, rawNavigationState, style)
                             }
                         })
                         
@@ -178,7 +189,7 @@ fun MapLibreMapArea(
                 mapLibreMap?.let { map ->
                     map.style?.let { style ->
                         updateCamera(map, navigationState, animate = true)
-                        updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, style)
+                        updateOverlays(map, navigationState, trajectoryPoints, estimatedTrajectoryPoints, rawNavigationState, style)
                     }
                 }
             }
@@ -244,6 +255,7 @@ private fun updateOverlays(
     navigationState: NavigationState,
     referenceTrajectoryPoints: List<Pair<Double, Double>>,
     estimatedTrajectoryPoints: List<Pair<Double, Double>>,
+    rawNavigationState: NavigationState?,
     style: Style
 ) {
     val vehiclePosition = Point.fromLngLat(navigationState.longitude, navigationState.latitude)
@@ -301,10 +313,23 @@ private fun updateOverlays(
     
     // Update vehicle marker (always follows estimated/NavigationState position)
     val iconName = if (navigationState.gnssAvailable) "vehicle-marker-cyan" else "vehicle-marker-orange"
+    // Update vehicle marker (map-matched position)
     val vehicleGeoJson = FeatureCollection.fromFeatures(listOf(
         Feature.fromGeometry(vehiclePosition)
     ))
     (style.getSource("vehicle-source") as? GeoJsonSource)?.setGeoJson(vehicleGeoJson)
+    
+    // Update raw vehicle position (if available for debugging)
+    rawNavigationState?.let { rawState ->
+        val rawPosition = Point.fromLngLat(rawState.longitude, rawState.latitude)
+        val rawGeoJson = FeatureCollection.fromFeatures(listOf(
+            Feature.fromGeometry(rawPosition)
+        ))
+        (style.getSource("raw-vehicle-source") as? GeoJsonSource)?.setGeoJson(rawGeoJson)
+    } ?: run {
+        // Clear raw position if not available
+        (style.getSource("raw-vehicle-source") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+    }
     
     // Update vehicle rotation and icon
     (style.getLayer("vehicle-layer") as? SymbolLayer)?.setProperties(

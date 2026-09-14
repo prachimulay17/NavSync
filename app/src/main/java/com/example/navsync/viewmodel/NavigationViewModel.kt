@@ -1,11 +1,14 @@
 package com.example.navsync.viewmodel
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.navsync.data.NavigationDataset
+import com.example.navsync.inference.InferenceFactory
+import com.example.navsync.mapmatching.MapMatcher
 import com.example.navsync.model.NavigationState
 import com.example.navsync.simulation.NavigationSimulator
 import kotlinx.coroutines.Job
@@ -13,12 +16,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class NavigationViewModel : ViewModel() {
+class NavigationViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val simulator = NavigationSimulator()
+    private val simulator = NavigationSimulator(
+        inference = InferenceFactory.createInferenceWithContext(application)
+    )
+    private val mapMatcher = MapMatcher()
     private var simulationJob: Job? = null
 
     var navigationState by mutableStateOf(
+        getDefaultState()
+    )
+        private set
+    
+    var rawNavigationState by mutableStateOf(
         getDefaultState()
     )
         private set
@@ -58,6 +69,9 @@ class NavigationViewModel : ViewModel() {
         simulator.loadDataset(dataset)
         simulator.configureOutage(gnssOutageEnabled, outageStartTimeSeconds, outageDurationSeconds)
         
+        // Reset map matching for new simulation
+        mapMatcher.reset()
+        
         totalSteps = simulator.getTotalSteps()
         isSimulationRunning = true
         hasArrived = false
@@ -80,22 +94,27 @@ class NavigationViewModel : ViewModel() {
             var isTrackingEstimated = false
             
             while (isActive && !simulator.isComplete()) {
-                // Advance simulation first
-                val state = simulator.nextState()
-                navigationState = state
+                // Advance simulation first - get raw ESKF/RoNIN position
+                val rawState = simulator.nextState()
+                rawNavigationState = rawState
+                
+                // Apply map-matching as post-processing layer
+                val matchedState = mapMatcher.matchToRoad(rawState)
+                navigationState = matchedState
+                
                 currentStep = simulator.getCurrentStep()
                 updateCount++
                 
                 // Track estimated trajectory during outage
-                if (!state.gnssAvailable && !isTrackingEstimated) {
+                if (!rawState.gnssAvailable && !isTrackingEstimated) {
                     // Start tracking estimated trajectory from outage transition point
                     isTrackingEstimated = true
                     android.util.Log.d("NavigationViewModel", "Started tracking estimated trajectory at outage")
                 }
                 
                 if (isTrackingEstimated) {
-                    // Add current estimated position to orange trajectory
-                    estimatedPoints.add(Pair(state.latitude, state.longitude))
+                    // Add current estimated position to orange trajectory (use map-matched position for display)
+                    estimatedPoints.add(Pair(matchedState.latitude, matchedState.longitude))
                     estimatedTrajectoryPoints = estimatedPoints.toList()
                 }
                 
@@ -113,7 +132,8 @@ class NavigationViewModel : ViewModel() {
                 lastTimestampMs = currentTimestampMs
                 
                 if (updateCount % 50 == 0) {
-                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s, speed: ${navigationState.speedKmh}")
+                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s, speed: ${matchedState.speedKmh}")
+                    android.util.Log.d("NavigationViewModel", "Raw pos: (${rawState.latitude}, ${rawState.longitude}), Matched: (${matchedState.latitude}, ${matchedState.longitude})")
                 }
             }
             
@@ -121,7 +141,8 @@ class NavigationViewModel : ViewModel() {
             if (isActive) {
                 hasArrived = true
                 android.util.Log.d("NavigationViewModel", "Simulation complete: $updateCount updates, final step=$currentStep/$totalSteps")
-                android.util.Log.d("NavigationViewModel", "Final state: lat=${navigationState.latitude}, lon=${navigationState.longitude}, speed=${navigationState.speedKmh}, gnss=${navigationState.gnssAvailable}")
+                android.util.Log.d("NavigationViewModel", "Final matched state: lat=${navigationState.latitude}, lon=${navigationState.longitude}, speed=${navigationState.speedKmh}, gnss=${navigationState.gnssAvailable}")
+                android.util.Log.d("NavigationViewModel", "Final raw state: lat=${rawNavigationState.latitude}, lon=${rawNavigationState.longitude}")
                 isSimulationRunning = false
             }
         }
@@ -134,6 +155,7 @@ class NavigationViewModel : ViewModel() {
         simulationJob?.cancel()
         simulationJob = null
         isSimulationRunning = false
+        mapMatcher.reset()
     }
     
     /**

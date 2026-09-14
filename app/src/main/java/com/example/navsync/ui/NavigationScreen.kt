@@ -34,6 +34,7 @@ fun NavigationScreen(
             navigationState = navigationState,
             trajectoryPoints = trajectoryPoints,
             estimatedTrajectoryPoints = estimatedTrajectoryPoints,
+            rawNavigationState = navigationViewModel.rawNavigationState,
             modifier = Modifier.fillMaxSize()
         )
         

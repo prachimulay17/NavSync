@@ -153,13 +153,13 @@ class NavigationSimulator(
                 val lastState = lastNavigationState ?: getDefaultState()
                 inference.initialize(lastState)
                 lastUpdateTimeMs = referencePoint.sensorData.timestampMs
-                android.util.Log.d("NavigationSimulator", "GNSS OUTAGE START at ${elapsedTimeSeconds}s (step $currentStep)")
+                android.util.Log.i("NavigationSimulator", "🚫 GNSS OUTAGE START at ${elapsedTimeSeconds}s (step $currentStep) - Switching to AI estimation")
             }
             !shouldBeInOutage && inOutage -> {
                 // Exiting outage (GNSS recovery)
                 inOutage = false
                 inference.reset()
-                android.util.Log.d("NavigationSimulator", "GNSS RECOVERY at ${elapsedTimeSeconds}s (step $currentStep)")
+                android.util.Log.i("NavigationSimulator", "📡 GNSS RECOVERY at ${elapsedTimeSeconds}s (step $currentStep) - Returning to GNSS positioning")
             }
         }
         
@@ -185,7 +185,8 @@ class NavigationSimulator(
             
             lastUpdateTimeMs = referencePoint.sensorData.timestampMs
             
-            android.util.Log.d("NavigationSimulator", "OUTAGE MODE: step=$currentStep, elapsed=${elapsedTimeSeconds}s, ref=(${referencePoint.gnssData.latitude.format(6)},${referencePoint.gnssData.longitude.format(6)}), est=(${inferenceResult.latitude.format(6)},${inferenceResult.longitude.format(6)})")
+            android.util.Log.v("NavigationSimulator", "🔒 OUTAGE MODE: Only IMU+prev_estimate sent to AI (NO reference position)")
+            android.util.Log.d("NavigationSimulator", "OUTAGE: t=${elapsedTimeSeconds}s | REF=(${referencePoint.gnssData.latitude.format(6)},${referencePoint.gnssData.longitude.format(6)}) | EST=(${inferenceResult.latitude.format(6)},${inferenceResult.longitude.format(6)})")
             
             NavigationState(
                 latitude = inferenceResult.latitude,

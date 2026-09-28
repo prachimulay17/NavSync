@@ -6,6 +6,7 @@ import com.example.navsync.data.SensorData
 import com.example.navsync.eskf.ESKF
 import com.example.navsync.eskf.ESKFConfiguration
 import com.example.navsync.eskf.ESKFImpl
+import com.example.navsync.eskf.ESKFResult
 import com.example.navsync.eskf.DeviceOrientation
 import com.example.navsync.eskf.ImuMeasurement
 import com.example.navsync.inference.InferenceResult
@@ -54,7 +55,7 @@ class RoninESKFInference(
     private var lastGpsSpeed: Double = 0.0
     private var lastGpsBearing: Double = Double.NaN
     
-    // GRV quaternion (simulated - in real app would come from sensor)
+    // GRV quaternion from real Android Game Rotation Vector sensor
     private val grvQuaternion = FloatArray(4) { 0f }  // [w, x, y, z]
     private var haveGrv = false
     
@@ -73,9 +74,9 @@ class RoninESKFInference(
             val deviceOrientation = DeviceOrientation.flat()
             eskf.initialize(lastState, configuration, deviceOrientation)
             
-            // Initialize GRV from heading (simulated)
-            val headingRad = Math.toRadians(lastState.headingDegrees)
-            initializeGrvFromHeading(headingRad)
+            // GRV will be initialized when first sensor data is processed
+            haveGrv = false
+            Log.i(TAG, "GRV will be initialized from first sensor data")
             
             // Bootstrap yaw if GPS available
             if (lastState.gnssAvailable && lastState.speedKmh > MIN_BOOTSTRAP_SPEED_KMH) {
@@ -170,8 +171,16 @@ class RoninESKFInference(
      * Transform device-frame sensors to HACF frame using GRV quaternion.
      */
     private fun transformToHacf(sensorData: SensorData): Pair<FloatArray, FloatArray> {
-        // Update GRV from orientation (simulated - in real app comes from TYPE_GAME_ROTATION_VECTOR)
-        updateGrvFromOrientation(sensorData)
+        // Update GRV from real sensor data (not simulated)
+        val grv = sensorData.gameRotationVector
+        if (grv != null && grv.size >= 3) {
+            // Convert rotation vector to quaternion using Android SensorManager
+            android.hardware.SensorManager.getQuaternionFromVector(grvQuaternion, grv)
+            haveGrv = true
+        } else if (!haveGrv) {
+            // Fallback: update from orientation yaw only (simulation mode)
+            updateGrvFromOrientation(sensorData)
+        }
         
         // Convert to float arrays
         val gyro = floatArrayOf(
@@ -341,6 +350,14 @@ class RoninESKFInference(
     
     fun close() {
         roninModel?.close()
+    }
+    
+    /**
+     * Get current ESKF state with velocity information.
+     * FOR VALIDATION/DIAGNOSTIC USE ONLY.
+     */
+    fun getESKFState(): ESKFResult {
+        return eskf.getCurrentState()
     }
     
     companion object {

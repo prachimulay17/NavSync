@@ -222,7 +222,13 @@ class CsvDataSource(private val context: Context) : ReplayDataSource {
                         // Orientation (degrees)
                         orientationYaw = parts[21].toDoubleOrNull() ?: 0.0,
                         orientationPitch = parts[22].toDoubleOrNull() ?: 0.0,
-                        orientationRoll = parts[23].toDoubleOrNull() ?: 0.0
+                        orientationRoll = parts[23].toDoubleOrNull() ?: 0.0,
+                        // Generate Game Rotation Vector from orientation angles
+                        gameRotationVector = generateGrvFromOrientation(
+                            parts[21].toDoubleOrNull() ?: 0.0,  // yaw
+                            parts[22].toDoubleOrNull() ?: 0.0,  // pitch
+                            parts[23].toDoubleOrNull() ?: 0.0   // roll
+                        )
                     )
                     
                     sensorMap[relativeTimestampMs] = sensorData
@@ -280,5 +286,39 @@ class CsvDataSource(private val context: Context) : ReplayDataSource {
         }
         
         return closestData
+    }
+    
+    /**
+     * Generate Game Rotation Vector (quaternion) from orientation angles.
+     * 
+     * Converts Euler angles (yaw, pitch, roll) to quaternion representation
+     * compatible with Android's Game Rotation Vector sensor format.
+     * 
+     * @param yawDeg Azimuth/heading in degrees
+     * @param pitchDeg Pitch in degrees  
+     * @param rollDeg Roll in degrees
+     * @return FloatArray [x, y, z, w] quaternion components
+     */
+    private fun generateGrvFromOrientation(yawDeg: Double, pitchDeg: Double, rollDeg: Double): FloatArray {
+        // Convert to radians
+        val yaw = Math.toRadians(yawDeg) / 2.0
+        val pitch = Math.toRadians(pitchDeg) / 2.0
+        val roll = Math.toRadians(rollDeg) / 2.0
+        
+        // Half-angle calculations
+        val cy = kotlin.math.cos(yaw)
+        val sy = kotlin.math.sin(yaw)
+        val cp = kotlin.math.cos(pitch)
+        val sp = kotlin.math.sin(pitch)
+        val cr = kotlin.math.cos(roll)
+        val sr = kotlin.math.sin(roll)
+        
+        // Quaternion multiplication (ZYX rotation order)
+        val w = (cr * cp * cy + sr * sp * sy).toFloat()
+        val x = (sr * cp * cy - cr * sp * sy).toFloat()
+        val y = (cr * sp * cy + sr * cp * sy).toFloat()
+        val z = (cr * cp * sy - sr * sp * cy).toFloat()
+        
+        return floatArrayOf(x, y, z, w)
     }
 }

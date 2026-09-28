@@ -25,7 +25,9 @@ data class SensorData(
     // Device orientation (degrees) - for frame transformation
     val orientationYaw: Double,   // Azimuth/heading
     val orientationPitch: Double, // Pitch
-    val orientationRoll: Double   // Roll
+    val orientationRoll: Double,  // Roll
+    // Game Rotation Vector (quaternion components, no magnetic declination)
+    val gameRotationVector: FloatArray? = null  // [x, y, z, w] or [x, y, z] format
 )
 
 /**

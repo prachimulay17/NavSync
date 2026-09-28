@@ -385,11 +385,16 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
     private var covarianceMatrix: Array<DoubleArray> = Array(15) { DoubleArray(15) }
     private var initialized = false
     
+    // Velocity persistence tracking (Option C fix)
+    private var lastVelocityUpdateTimeMs: Long? = null
+    private var currentTimeMs: Long = 0L
+    
     // Constants for integration
     private companion object {
         const val GRAVITY_MAGNITUDE = 9.80665  // m/s² (standard gravity)
         const val MIN_QUATERNION_NORM = 1e-6   // Minimum quaternion norm for stability
         const val MAX_DELTA_TIME = 0.5         // Maximum delta time (seconds) for stability
+        const val VELOCITY_PERSISTENCE_DURATION_MS = 5000L  // 5 seconds
     }
     
     override fun initialize(
@@ -425,6 +430,9 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         
         val nominal = nominalState ?: throw IllegalStateException("Nominal state is null")
         
+        // Update current timestamp
+        currentTimeMs = imuMeasurement.timestampMs
+        
         // Validate delta time
         val dt = deltaTimeSeconds.coerceIn(0.0, MAX_DELTA_TIME)
         if (dt <= 0.0) {
@@ -432,7 +440,7 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         }
         
         try {
-            // Perform nominal state prediction
+            // Perform nominal state prediction (with velocity persistence if applicable)
             val predictedNominal = predictNominalState(nominal, imuMeasurement, dt)
             
             // Perform error-state covariance propagation
@@ -450,14 +458,27 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
     }
     
     /**
+     * Format double for logging.
+     */
+    private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
+    
+    /**
      * Predict nominal state forward using IMU measurements.
      * Implements the full IMU prediction model with proper coordinate transformations.
+     * 
+     * OPTION C FIX: Implements velocity persistence for 5 seconds after RoNIN updates
+     * to prevent IMU acceleration from corrupting velocity between measurements.
      */
     private fun predictNominalState(
         currentState: NominalState,
         imu: ImuMeasurement,
         dt: Double
     ): NominalState {
+        
+        // Check if we should use velocity persistence (Option C fix)
+        val timeSinceVelocityUpdate = lastVelocityUpdateTimeMs?.let { currentTimeMs - it }
+        val useVelocityPersistence = timeSinceVelocityUpdate != null && 
+                                      timeSinceVelocityUpdate < VELOCITY_PERSISTENCE_DURATION_MS
         
         // 1. BIAS-CORRECTED IMU MEASUREMENTS
         // Remove estimated biases from IMU measurements
@@ -493,9 +514,33 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         val accelDownNoGrav = accelNED.third - GRAVITY_MAGNITUDE  // Remove +Down gravity
         
         // 5. VELOCITY PROPAGATION
-        // Integrate acceleration to update velocity
-        val newVelNorth = currentState.velocityNorth + accelNorthNoGrav * dt
-        val newVelEast = currentState.velocityEast + accelEastNoGrav * dt
+        // OPTION C: Preserve horizontal velocity if we have a recent RoNIN update
+        val newVelNorth: Double
+        val newVelEast: Double
+        
+        if (useVelocityPersistence) {
+            // Recently updated by RoNIN - maintain horizontal velocity, ignore IMU acceleration
+            newVelNorth = currentState.velocityNorth
+            newVelEast = currentState.velocityEast
+            
+            // Log velocity persistence status (only occasionally to avoid spam)
+            if (timeSinceVelocityUpdate!! % 1000L < 100L) {
+                android.util.Log.d("ESKFImpl", "🔒 Velocity persistence active: " +
+                    "age=${timeSinceVelocityUpdate}ms, vN=${currentState.velocityNorth.format(3)} m/s, " +
+                    "vE=${currentState.velocityEast.format(3)} m/s")
+            }
+        } else {
+            // No recent update - integrate IMU acceleration normally
+            newVelNorth = currentState.velocityNorth + accelNorthNoGrav * dt
+            newVelEast = currentState.velocityEast + accelEastNoGrav * dt
+            
+            if (timeSinceVelocityUpdate != null && timeSinceVelocityUpdate > VELOCITY_PERSISTENCE_DURATION_MS && 
+                timeSinceVelocityUpdate < VELOCITY_PERSISTENCE_DURATION_MS + 100L) {
+                android.util.Log.d("ESKFImpl", "🔓 Velocity persistence expired, resuming IMU integration")
+            }
+        }
+        
+        // Vertical velocity always uses IMU (no RoNIN measurement for down component)
         val newVelDown = currentState.velocityDown + accelDownNoGrav * dt
         
         // 6. POSITION PROPAGATION
@@ -646,11 +691,6 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         )
     }
     
-    /**
-     * Format double for logging.
-     */
-    private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
-    
     override fun updateWithGNSSPosition(gnssLatitude: Double, gnssLongitude: Double, gnssUncertainty: Double): ESKFResult {
         if (!initialized) throw IllegalStateException("ESKF not initialized")
         
@@ -726,6 +766,9 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         // Reset covariance matrix
         covarianceMatrix = Array(15) { DoubleArray(15) }
         initialized = false
+        // Reset velocity persistence tracking
+        lastVelocityUpdateTimeMs = null
+        currentTimeMs = 0L
     }
     
     override fun isInitialized(): Boolean = initialized
@@ -1178,6 +1221,7 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         if (!validateVelocityInnovation(innovation, S)) {
             android.util.Log.w("ESKFImpl", "❌ RoNIN velocity REJECTED: NIS gate failed")
             // Reject outlier measurement - return unchanged state
+            // Do NOT update velocity persistence timestamp
             return nominalState
         }
         
@@ -1196,9 +1240,13 @@ internal class ESKFImpl(private var configuration: ESKFConfiguration) : ESKF {
         // 10. Apply ESKF covariance reset after error state injection
         applyErrorStateReset(deltaX)
         
+        // 11. OPTION C: Record timestamp of accepted velocity update
+        lastVelocityUpdateTimeMs = currentTimeMs
+        
         android.util.Log.i("ESKFImpl", "✅ RoNIN velocity ACCEPTED: innovation=[%.3f, %.3f] m/s, correction=[%.3f, %.3f] m/s".format(
             innovation[0], innovation[1], deltaX[3], deltaX[4]
         ))
+        android.util.Log.i("ESKFImpl", "🔒 Velocity persistence activated for ${VELOCITY_PERSISTENCE_DURATION_MS}ms")
         
         return correctedState
     }

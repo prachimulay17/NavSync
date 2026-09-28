@@ -64,9 +64,6 @@ fun NavigationHUD(
                 gnssAvailable = navigationState.gnssAvailable,
                 confidence = navigationState.confidence
             )
-            
-            // Confidence display
-            ConfidenceDisplay(confidence = navigationState.confidence)
         }
         
         // Secondary info row
@@ -152,18 +149,22 @@ private fun NavigationSource(
                     .background(if (gnssAvailable) StatusGreen else Color(0xFFFFC107))
             )
             Text(
-                text = if (gnssAvailable) "GNSS" else "NavSync",
+                text = if (gnssAvailable) "GNSS" else "GNSS DENIED",
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
             )
         }
         
-        Text(
-            text = "${(confidence * 100).toInt()}%",
-            color = Color(0xFFB0BEC5),
-            fontSize = 11.sp
-        )
+        // Show "NavSync AI" label during outage
+        if (!gnssAvailable) {
+            Text(
+                text = "NavSync AI",
+                color = Color(0xFFFFC107),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 

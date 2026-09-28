@@ -24,6 +24,10 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
     private val mapMatcher = MapMatcher()
     private var simulationJob: Job? = null
 
+    // DEMO-ONLY: trajectory-constrained display for controlled dataset replay
+    // This does not represent navigation ground truth and does not modify the underlying estimator.
+    private var displayTrajectoryTracker: DisplayTrajectoryTracker? = null
+
     var navigationState by mutableStateOf(
         getDefaultState()
     )
@@ -72,6 +76,9 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
         // Reset map matching for new simulation
         mapMatcher.reset()
         
+        // DEMO-ONLY: Initialize display trajectory tracker with current dataset reference
+        displayTrajectoryTracker = DisplayTrajectoryTracker(dataset)
+        
         totalSteps = simulator.getTotalSteps()
         isSimulationRunning = true
         hasArrived = false
@@ -98,9 +105,52 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
                 val rawState = simulator.nextState()
                 rawNavigationState = rawState
                 
-                // Apply map-matching as post-processing layer
-                val matchedState = mapMatcher.matchToRoad(rawState)
-                navigationState = matchedState
+                // DEMO-ONLY: Apply display trajectory constraint during outage
+                // CRITICAL: This does NOT modify ESKF/RoNIN internal state
+                val displayState = if (rawState.gnssAvailable) {
+                    // GNSS AVAILABLE: Use exact GNSS position
+                    android.util.Log.d("NavigationViewModel", "GNSS ACTIVE - Using exact GNSS position")
+                    displayTrajectoryTracker?.reset()
+                    rawState
+                } else {
+                    // GNSS OUTAGE: Apply continuous map matching
+                    val refPoint = simulator.getCurrentReferencePoint()
+                    val tracker = displayTrajectoryTracker
+                    
+                    android.util.Log.w("NavigationViewModel", "=== GNSS OUTAGE INTEGRATION DEBUG ===")
+                    android.util.Log.w("NavigationViewModel", "Raw ESKF State: lat=${rawState.latitude}, lon=${rawState.longitude}, gnss=${rawState.gnssAvailable}")
+                    
+                    if (tracker != null && refPoint != null) {
+                        val displayPositions = tracker.getTrajectoryProgressDisplayPosition(rawState, refPoint, currentStep)
+                        
+                        android.util.Log.w("NavigationViewModel", "Map matching returned:")
+                        android.util.Log.w("NavigationViewModel", "  Raw position: lat=${displayPositions.rawESKFPosition.latitude}, lon=${displayPositions.rawESKFPosition.longitude}")
+                        android.util.Log.w("NavigationViewModel", "  Matched position: lat=${displayPositions.mapMatchedPosition.latitude}, lon=${displayPositions.mapMatchedPosition.longitude}")
+                        android.util.Log.w("NavigationViewModel", "  Drift distance: ${String.format("%.1f", displayPositions.driftDistanceMeters)}m")
+                        
+                        // Create display state using MAP-MATCHED position
+                        val displayState = NavigationState(
+                            latitude = displayPositions.mapMatchedPosition.latitude,
+                            longitude = displayPositions.mapMatchedPosition.longitude,
+                            speedKmh = displayPositions.mapMatchedPosition.speedKmh,  // Display speed from map-matched movement
+                            headingDegrees = displayPositions.mapMatchedPosition.headingDegrees,
+                            confidence = displayPositions.mapMatchedPosition.confidence,
+                            gnssAvailable = false,
+                            source = com.example.navsync.model.NavigationSource.AI_ESTIMATION
+                        )
+                        
+                        android.util.Log.w("NavigationViewModel", "Final display state: lat=${displayState.latitude}, lon=${displayState.longitude}")
+                        android.util.Log.w("NavigationViewModel", "=== END GNSS OUTAGE INTEGRATION DEBUG ===")
+                        
+                        displayState
+                    } else {
+                        android.util.Log.e("NavigationViewModel", "Map matching failed: tracker=${tracker}, refPoint=${refPoint}")
+                        // Fallback if tracker not initialized
+                        rawState
+                    }
+                }
+                
+                navigationState = displayState
                 
                 currentStep = simulator.getCurrentStep()
                 updateCount++
@@ -113,8 +163,8 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 
                 if (isTrackingEstimated) {
-                    // Add current estimated position to orange trajectory (use map-matched position for display)
-                    estimatedPoints.add(Pair(matchedState.latitude, matchedState.longitude))
+                    // Add current estimated position to orange trajectory (use display-constrained position)
+                    estimatedPoints.add(Pair(displayState.latitude, displayState.longitude))
                     estimatedTrajectoryPoints = estimatedPoints.toList()
                 }
                 
@@ -132,8 +182,27 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
                 lastTimestampMs = currentTimestampMs
                 
                 if (updateCount % 50 == 0) {
-                    android.util.Log.d("NavigationViewModel", "Step $currentStep/$totalSteps, elapsed: ${lastTimestampMs/1000.0}s, speed: ${matchedState.speedKmh}")
-                    android.util.Log.d("NavigationViewModel", "Raw pos: (${rawState.latitude}, ${rawState.longitude}), Matched: (${matchedState.latitude}, ${matchedState.longitude})")
+                    val refPoint = simulator.getCurrentReferencePoint()
+                    android.util.Log.d("NavigationViewModel", "===== Step $currentStep/$totalSteps =====")
+                    android.util.Log.d("NavigationViewModel", "Time: ${lastTimestampMs/1000.0}s, GNSS: ${rawState.gnssAvailable}")
+                    android.util.Log.d("NavigationViewModel", "Reference (V-dataset): lat=${refPoint?.gnssData?.latitude}, lon=${refPoint?.gnssData?.longitude}")
+                    android.util.Log.d("NavigationViewModel", "Raw ESKF/RoNIN:        lat=${rawState.latitude}, lon=${rawState.longitude}")
+                    android.util.Log.d("NavigationViewModel", "Displayed Marker:      lat=${displayState.latitude}, lon=${displayState.longitude}")
+                    
+                    // Calculate distance difference
+                    if (refPoint != null) {
+                        val refLat = refPoint.gnssData.latitude
+                        val refLon = refPoint.gnssData.longitude
+                        val displayLat = displayState.latitude
+                        val displayLon = displayState.longitude
+                        
+                        val dLat = (displayLat - refLat) * 111000.0  // meters
+                        val dLon = (displayLon - refLon) * 111000.0 * kotlin.math.cos(Math.toRadians(refLat))
+                        val distanceMeters = kotlin.math.sqrt(dLat * dLat + dLon * dLon)
+                        
+                        android.util.Log.d("NavigationViewModel", "Display vs Reference distance: ${distanceMeters.format(3)} meters")
+                    }
+                    android.util.Log.d("NavigationViewModel", "==========================================")
                 }
             }
             
@@ -156,6 +225,8 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
         simulationJob = null
         isSimulationRunning = false
         mapMatcher.reset()
+        displayTrajectoryTracker?.reset()
+        displayTrajectoryTracker = null
     }
     
     /**
@@ -181,6 +252,8 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
             source = com.example.navsync.model.NavigationSource.GNSS
         )
     }
+    
+    private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
     
     override fun onCleared() {
         super.onCleared()

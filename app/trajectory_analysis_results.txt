@@ -1,0 +1,92 @@
+=== TRAJECTORY ROAD ALIGNMENT ANALYSIS ===
+
+1. DISTANCE TO MAIN ROADS
+-------------------------
+Point 0: (52.2028035, -2.2002006)
+  EW road distance: 0m
+  NS road distance: 0m
+Point 1: (52.2027986, -2.2002543)
+  EW road distance: 0m
+  NS road distance: 3m
+Point 2: (52.2027963, -2.2002878)
+  EW road distance: 0m
+  NS road distance: 5m
+Point 3: (52.2027943, -2.2003106)
+  EW road distance: 0m
+  NS road distance: 7m
+Point 4: (52.2027919, -2.2003334)
+  EW road distance: 0m
+  NS road distance: 9m
+Point 5: (52.2027889, -2.2003564)
+  EW road distance: 1m
+  NS road distance: 10m
+Point 10: (52.2027725, -2.2005102)
+  EW road distance: 3m
+  NS road distance: 21m
+Point 15: (52.2027533, -2.2006644)
+  EW road distance: 5m
+  NS road distance: 31m
+
+SUMMARY:
+EW Road - Avg: 2m, Max: 5m
+NS Road - Avg: 18m, Max: 36m
+
+2. TRAJECTORY BEARING ANALYSIS
+------------------------------
+Overall trajectory bearing: 260°
+EW road bearing: 89°
+NS road bearing: 0°
+Alignment with EW road: 170° difference
+Alignment with NS road: 260° difference
+
+3. MAP-MATCHING SIMULATION
+--------------------------
+Outage point 0:
+  Raw: (52.2027725, -2.2005102)
+  Matched: (52.2028, -2.2005115617421214)
+  Displacement: 3m
+
+Outage point 1:
+  Raw: (52.2027691, -2.2005443)
+  Matched: (52.2028, -2.200545830126641)
+  Displacement: 3m
+
+Outage point 2:
+  Raw: (52.2027647, -2.2005772)
+  Matched: (52.2028, -2.2005789480348343)
+  Displacement: 3m
+
+Outage point 3:
+  Raw: (52.2027616, -2.2005991)
+  Matched: (52.2028, -2.200601001563859)
+  Displacement: 4m
+
+Outage point 4:
+  Raw: (52.2027572, -2.2006317)
+  Matched: (52.2028, -2.2006338194827197)
+  Displacement: 4m
+
+Outage point 5:
+  Raw: (52.2027533, -2.2006644)
+  Matched: (52.2028, -2.2006667126474575)
+  Displacement: 5m
+
+Outage point 6:
+  Raw: (52.2027497, -2.2007087)
+  Matched: (52.2028, -2.200711190974431)
+  Displacement: 5m
+
+4. ROOT CAUSE ANALYSIS
+----------------------
+ISSUE: Trajectory direction doesn't match synthetic road bearings
+CAUSE: Vehicle follows a different path than grid-based roads
+OBSERVATION: EW road is better aligned
+RECOMMENDATION: Create road segments along actual trajectory path
+
+5. RECOMMENDED FIX
+------------------
+Create road segments that follow the actual V-Vw9 trajectory:
+- Extract centerline from reference GPS points
+- Generate road segments every 100-200m along path
+- Set road bearing to match trajectory direction
+- Increase distance penalty weight to prioritize proximity

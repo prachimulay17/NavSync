@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Default ignored files
+/shelf/
+/workspace.xml

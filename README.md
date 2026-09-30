@@ -110,8 +110,38 @@ This makes **sensor reliability part of the navigation process**, rather than us
 
 ## System Architecture
 
-<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/e6120900-fdd5-4907-b1fd-bb49423d32d8" />
-
+```text
+                    ┌──────────────────┐
+                    │      GNSS        │
+                    └────────┬─────────┘
+                             ↓
+                    ┌──────────────────┐
+                    │ GNSS Quality &   │
+                    │ Anomaly Check    │
+                    └────────┬─────────┘
+                             │
+                             ↓
+┌──────────────┐     ┌──────────────────┐
+│ Smartphone   │────►│ Physics-Based    │
+│ IMU          │     │ State Estimator  │
+└──────────────┘     │ ESKF / InEKF     │
+                     └────────┬─────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            ↓                 ↓                 ↓
+   ┌────────────────┐ ┌───────────────┐ ┌─────────────────┐
+   │ Learned Motion │ │ Vehicle       │ │ Road /          │
+   │ Information    │ │ Constraints   │ │ Trajectory      │
+   │                │ │               │ │ Consistency     │
+   └────────────────┘ └───────────────┘ └─────────────────┘
+            │                 │                 │
+            └─────────────────┼─────────────────┘
+                              ↓
+                    ┌──────────────────┐
+                    │ Navigation State │
+                    │ + Uncertainty    │
+                    └──────────────────┘
+```
 
 ---
 
@@ -142,6 +172,18 @@ GNSS Recovery Verification
           ↓
 Gradual GNSS Re-integration
 ```
+
+---
+
+## Initial Results
+
+The current physics-based navigation baseline has been tested on self-collected smartphone sensor data.
+
+The comparison below shows the current trajectory results during GNSS degradation.
+
+<img width="1600" height="933" alt="trajectory comparison" src="https://github.com/user-attachments/assets/0bff51d0-249e-40ea-9c59-13774df54fc0" />
+
+> **Note:** These are early prototype results and are being used to validate the navigation pipeline before adding the remaining components.
 
 ---
 
@@ -218,6 +260,22 @@ The system therefore aims to communicate not only:
 but also:
 
 > **How certain is the estimate?**
+
+---
+
+## Mobile Application
+
+NavSync is being developed around a smartphone-first deployment model.
+
+The mobile application will collect the sensor information required by the navigation engine and provide the runtime interface for navigation and diagnostics.
+
+### Mobile App Screenshots
+
+[IMAGE PLACEHOLDER — Mobile app home / recording screen]
+
+[IMAGE PLACEHOLDER — Mobile app navigation screen]
+
+[IMAGE PLACEHOLDER — Mobile app sensor / diagnostics screen]
 
 ---
 
@@ -350,13 +408,6 @@ NavSync is currently under active development.
 
 The physics-based navigation baseline is being validated first. More advanced components such as learned motion estimation, adaptive GNSS reliability, road consistency, and verified recovery will be integrated progressively after their individual assumptions are validated.
 
+[DIAGRAM PLACEHOLDER — Final system overview]
 
-
-# trajectory comparison
-<img width="1600" height="933" alt="image" src="https://github.com/user-attachments/assets/0bff51d0-249e-40ea-9c59-13774df54fc0" />
-
-
-- Tested on self collected data
-
-
-
+[IMAGE PLACEHOLDER — NavSync demonstration / trajectory comparison]

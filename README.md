@@ -353,7 +353,8 @@ The physics-based navigation baseline is being validated first. More advanced co
 
 
 # trajectory comparison
-<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/3b630abe-d447-4460-b898-1f198b6805b3" />
+<img width="1600" height="933" alt="image" src="https://github.com/user-attachments/assets/0bff51d0-249e-40ea-9c59-13774df54fc0" />
+
 
 - Tested on self collected data
 

@@ -1,4 +1,4 @@
-<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/9fac056b-ce38-40d8-b7c6-7afa53e95d62" /><img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/bd9971e4-22a9-44e9-9500-bcbb1cc4bc81" /># NavSync
+# NavSync
 
 ## Reliable Navigation Beyond GNSS
 

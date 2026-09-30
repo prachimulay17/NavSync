@@ -1,4 +1,4 @@
-# NavSync
+<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/9fac056b-ce38-40d8-b7c6-7afa53e95d62" /><img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/bd9971e4-22a9-44e9-9500-bcbb1cc4bc81" /># NavSync
 
 ## Reliable Navigation Beyond GNSS
 
@@ -110,38 +110,8 @@ This makes **sensor reliability part of the navigation process**, rather than us
 
 ## System Architecture
 
-```text
-                    ┌──────────────────┐
-                    │      GNSS        │
-                    └────────┬─────────┘
-                             ↓
-                    ┌──────────────────┐
-                    │ GNSS Quality &   │
-                    │ Anomaly Check    │
-                    └────────┬─────────┘
-                             │
-                             ↓
-┌──────────────┐     ┌──────────────────┐
-│ Smartphone   │────►│ Physics-Based    │
-│ IMU          │     │ State Estimator  │
-└──────────────┘     │ ESKF / InEKF     │
-                     └────────┬─────────┘
-                              │
-            ┌─────────────────┼─────────────────┐
-            ↓                 ↓                 ↓
-   ┌────────────────┐ ┌───────────────┐ ┌─────────────────┐
-   │ Learned Motion │ │ Vehicle       │ │ Road /          │
-   │ Information    │ │ Constraints   │ │ Trajectory      │
-   │                │ │               │ │ Consistency     │
-   └────────────────┘ └───────────────┘ └─────────────────┘
-            │                 │                 │
-            └─────────────────┼─────────────────┘
-                              ↓
-                    ┌──────────────────┐
-                    │ Navigation State │
-                    │ + Uncertainty    │
-                    └──────────────────┘
-```
+<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/e6120900-fdd5-4907-b1fd-bb49423d32d8" />
+
 
 ---
 
@@ -380,6 +350,12 @@ NavSync is currently under active development.
 
 The physics-based navigation baseline is being validated first. More advanced components such as learned motion estimation, adaptive GNSS reliability, road consistency, and verified recovery will be integrated progressively after their individual assumptions are validated.
 
-[DIAGRAM PLACEHOLDER — Final system overview]
 
-[IMAGE PLACEHOLDER — NavSync demonstration / trajectory comparison]
+
+# trajectory comparison
+<img width="5068" height="3736" alt="properarch drawio (3)" src="https://github.com/user-attachments/assets/3b630abe-d447-4460-b898-1f198b6805b3" />
+
+- Tested on self collected data
+
+
+
